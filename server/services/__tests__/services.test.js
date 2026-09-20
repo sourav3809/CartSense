@@ -239,4 +239,183 @@ testCadenceLearning();
   console.log('✔ Test 13 Passed: Simultaneous consumption learning signals');
 }
 
+// Test 14: normalizeItemName handling transliterations, brands, special chars, pack sizes
+async function testNormalizeItemName() {
+  const { normalizeItemName } = await import('../priceMatching.js');
+  const res1 = normalizeItemName('Amul Taaza Doodh (500ml)!');
+  console.assert(res1.includes('milk'), `Test 14 Failed: Should convert doodh to milk, got: ${res1}`);
+  console.assert(!res1.includes('!'), `Test 14 Failed: Special chars should be stripped, got: ${res1}`);
+
+  const res2 = normalizeItemName('Fresh Aloo / Potato 1kg');
+  console.assert(res2.includes('potato'), `Test 14 Failed: Aloo should normalize to potato, got: ${res2}`);
+
+  const res3 = normalizeItemName('Mother Dairy Dahi - 400g');
+  console.assert(res3.includes('curd'), `Test 14 Failed: Dahi should normalize to curd, got: ${res3}`);
+
+  console.log('✔ Test 14 Passed: normalizeItemName transliterations, brand prefixes, and special characters');
+}
+await testNormalizeItemName();
+
+// Test 15: filterCandidatesByExclusions rejects out-of-stock and hard contrast constraints
+async function testFilterCandidatesByExclusions() {
+  const { filterCandidatesByExclusions } = await import('../priceMatching.js');
+  
+  const milkCandidates = [
+    { name: 'Amul Taaza Toned Milk', in_stock: true },
+    { name: 'Amul Gold Full Cream Milk', in_stock: true },
+    { name: 'Mother Dairy Toned Milk', in_stock: false } // out of stock
+  ];
+
+  const filteredToned = filterCandidatesByExclusions(milkCandidates, 'toned milk', 'blinkit');
+  console.assert(filteredToned.length === 1, `Test 15 Failed: Should keep only in-stock toned milk, got length ${filteredToned.length}`);
+  console.assert(filteredToned[0].name === 'Amul Taaza Toned Milk', 'Test 15 Failed: Full cream and out-of-stock must be excluded');
+
+  const breadCandidates = [
+    { name: 'Harvest Gold Brown Bread', available: true },
+    { name: 'Harvest Gold White Bread', available: true },
+    { name: 'English Oven Brown Bread', available: false }
+  ];
+  const filteredBrown = filterCandidatesByExclusions(breadCandidates, 'brown bread', 'blinkit');
+  console.assert(filteredBrown.length === 1, `Test 15 Failed: Should exclude white bread and out-of-stock bread, got ${filteredBrown.length}`);
+  console.assert(filteredBrown[0].name === 'Harvest Gold Brown Bread', 'Test 15 Failed: Should match Brown Bread');
+
+  console.log('✔ Test 15 Passed: filterCandidatesByExclusions availability and hard constraints');
+}
+await testFilterCandidatesByExclusions();
+
+// Test 16: scoreAndSelectBestMatch ranking, packsize penalty, and threshold failure
+async function testScoreAndSelectBestMatch() {
+  const { scoreAndSelectBestMatch } = await import('../priceMatching.js');
+
+  const candidates = [
+    { name: 'Amul Taaza Toned Milk', unit: '1 L', price: 68, in_stock: true },
+    { name: 'Amul Taaza Toned Milk', unit: '500 ml', price: 34, in_stock: true }
+  ];
+
+  // Requesting 500 ml should pick 500 ml candidate due to quantity match bonus
+  const best500 = scoreAndSelectBestMatch(candidates, 'Amul Taaza Toned Milk', '500 ml', 'blinkit');
+  console.assert(best500 !== null, 'Test 16 Failed: Should find a match');
+  console.assert(best500.parsedQty.value === 500, `Test 16 Failed: Expected 500ml match, got ${best500?.parsedQty?.value}`);
+  console.assert(best500.quantityMatched === true, 'Test 16 Failed: quantityMatched should be true');
+
+  // Completely irrelevant candidate pool should return null
+  const unrelatedPool = [
+    { name: 'Colgate MaxFresh Toothpaste', unit: '150 g', price: 120, in_stock: true }
+  ];
+  const noMatch = scoreAndSelectBestMatch(unrelatedPool, 'Amul Butter', '100 g', 'blinkit');
+  console.assert(noMatch === null, 'Test 16 Failed: Completely unrelated products must return null');
+
+  console.log('✔ Test 16 Passed: scoreAndSelectBestMatch ranking, pack size preference, and null threshold');
+}
+await testScoreAndSelectBestMatch();
+
+// Test 17: getUsersDueForNudgeEvaluation timezone selectivity
+async function testGetUsersDueForNudgeEvaluation() {
+  const { getUsersDueForNudgeEvaluation } = await import('../nudgeService.js');
+
+  // 14:30 UTC is exactly 20:00 (8:00 PM) in Asia/Kolkata (UTC +5:30)
+  const fixedNow = new Date('2026-08-15T14:30:00Z');
+
+  const mockUsers = [
+    { id: 'user_kolkata', data: () => ({ timezone: 'Asia/Kolkata' }) },
+    { id: 'user_default_tz', data: () => ({}) }, // defaults to Asia/Kolkata
+    { id: 'user_ny', data: () => ({ timezone: 'America/New_York' }) },
+    { id: 'user_london', data: () => ({ timezone: 'Europe/London' }) }
+  ];
+
+  const dueUsers = getUsersDueForNudgeEvaluation(mockUsers, fixedNow);
+  const dueIds = dueUsers.map(u => u.id);
+
+  console.assert(dueIds.includes('user_kolkata'), 'Test 17 Failed: Asia/Kolkata user should be due at 20:00 local');
+  console.assert(dueIds.includes('user_default_tz'), 'Test 17 Failed: Default timezone user should be due at 20:00 local');
+  console.assert(!dueIds.includes('user_ny'), 'Test 17 Failed: America/New_York user should not be due');
+  console.assert(!dueIds.includes('user_london'), 'Test 17 Failed: Europe/London user should not be due');
+
+  console.log('✔ Test 17 Passed: getUsersDueForNudgeEvaluation timezone isolation');
+}
+await testGetUsersDueForNudgeEvaluation();
+
+// Test 18: handleRecommendationAction idempotency & deduplication
+async function testHandleRecommendationActionIdempotency() {
+  const { handleRecommendationAction } = await import('../learningService.js');
+
+  const store = {
+    actions: {},
+    stats: {},
+    edit_logs: []
+  };
+
+  const mockDb = {
+    runTransaction: async (updateFn) => {
+      const transactionObj = {
+        get: async (ref) => {
+          if (ref._type === 'action') {
+            const data = store.actions[ref._id];
+            return { exists: !!data, data: () => data };
+          }
+          if (ref._type === 'stat') {
+            const data = store.stats[ref._id];
+            return { exists: !!data, data: () => data };
+          }
+          return { exists: false, data: () => null };
+        },
+        set: (ref, data) => {
+          if (ref._type === 'action') {
+            store.actions[ref._id] = { ...(store.actions[ref._id] || {}), ...data };
+          }
+          if (ref._type === 'stat') {
+            const existing = store.stats[ref._id] || { shown: 0, accepted: 0, dismissed: 0 };
+            store.stats[ref._id] = {
+              ...existing,
+              accepted: (existing.accepted || 0) + (data.accepted ? 1 : 0),
+              consecutive_dismissals: data.consecutive_dismissals ?? existing.consecutive_dismissals
+            };
+          }
+        },
+        update: () => {}
+      };
+      return await updateFn(transactionObj);
+    },
+    collection: () => ({
+      doc: () => ({
+        collection: (subCol) => ({
+          doc: (docId) => {
+            if (subCol === 'recommendation_actions') {
+              return { _type: 'action', _id: docId };
+            }
+            if (subCol === 'recommendation_stats') {
+              return { _type: 'stat', _id: docId };
+            }
+            if (subCol === 'household_items') {
+              return {
+                get: async () => ({ exists: true, data: () => ({ item_name: 'Milk' }) })
+              };
+            }
+            return { _type: 'unknown', _id: docId };
+          },
+          add: async (docData) => {
+            if (subCol === 'edit_log') {
+              store.edit_logs.push(docData);
+            }
+          }
+        })
+      })
+    })
+  };
+
+  const actionId = 'test_action_dedup_123';
+  const res1 = await handleRecommendationAction('user1', 'item_milk', 'added', actionId, mockDb);
+  console.assert(res1.success === true, 'Test 18 Failed: First call should succeed');
+  console.assert(!res1.deduplicated, 'Test 18 Failed: First call should not be deduplicated');
+  console.assert(store.stats['item_milk'].accepted === 1, `Test 18 Failed: Expected accepted count 1, got ${store.stats['item_milk']?.accepted}`);
+
+  const res2 = await handleRecommendationAction('user1', 'item_milk', 'added', actionId, mockDb);
+  console.assert(res2.success === true, 'Test 18 Failed: Second call should succeed');
+  console.assert(res2.deduplicated === true, 'Test 18 Failed: Second call should return deduplicated: true');
+  console.assert(store.stats['item_milk'].accepted === 1, `Test 18 Failed: Stats must NOT be incremented again, got ${store.stats['item_milk']?.accepted}`);
+
+  console.log('✔ Test 18 Passed: handleRecommendationAction idempotency and deduplication');
+}
+await testHandleRecommendationActionIdempotency();
+
 console.log('--- ALL UNIT & INTEGRATION TESTS COMPLETED SUCCESSFULLY ---');

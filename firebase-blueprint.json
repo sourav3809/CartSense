@@ -10,6 +10,7 @@
         "email": { "type": "string", "format": "email" },
         "password": { "type": "string", "description": "Hashed password" },
         "nudge_threshold": { "type": "number", "description": "Default 4" },
+        "timezone": { "type": "string", "description": "IANA timezone identifier, e.g. Asia/Kolkata" },
         "push_subscription": { "type": "object", "description": "VAPID push object" },
         "onboarding_complete": { "type": "boolean", "description": "Default false" },
         "nudge_snoozed_until": { "type": "string", "format": "date-time" },

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Settings, Plus, X, Sparkles, LineChart, Bell, Clock } from 'lucide-react';
-import { db, auth } from '../lib/firebase';
-import { collection, getDocs, addDoc, serverTimestamp, doc, deleteDoc, setDoc, updateDoc, increment, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { collection, getDocs, addDoc, serverTimestamp, doc, deleteDoc } from 'firebase/firestore';
 
 import { motion, AnimatePresence } from 'motion/react';
 import RunningLowCard from '../components/RunningLowCard';
@@ -115,35 +115,11 @@ export default function Home() {
         const topRecs = recs.slice(0, 2);
         setRecommendations(topRecs);
 
-        // Deduplicated authoritative exposure tracking
+        // Deduplicated authoritative exposure tracking via server endpoint
         if (topRecs.length > 0) {
           const exposureKey = `${topRecs.map(r => r.id).sort().join('_')}_${todayStr}`;
           if (!exposureTrackedRef.current.has(exposureKey)) {
             exposureTrackedRef.current.add(exposureKey);
-            if (userId && auth.currentUser) {
-              (async () => {
-                try {
-                  const expDocRef = doc(db, 'users', userId, 'recommendation_exposures', exposureKey);
-                  const expSnap = await getDoc(expDocRef);
-                  if (!expSnap.exists()) {
-                    await setDoc(expDocRef, {
-                      item_ids: topRecs.map(r => r.id),
-                      recorded_at: serverTimestamp()
-                    });
-                    for (const rec of topRecs) {
-                      const statRef = doc(db, 'users', userId, 'recommendation_stats', rec.id);
-                      await setDoc(statRef, {
-                        shown: increment(1),
-                        last_shown: serverTimestamp()
-                      }, { merge: true });
-                    }
-                  }
-                } catch (err) {
-                  console.debug('[Home] Direct exposure log:', err);
-                }
-              })();
-            }
-
             fetch(`/api/users/${userId}/recommendations/exposure`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -316,43 +292,7 @@ export default function Home() {
         await handleAddCapture({ item_name: item.item_name, quantity: null, source: 'recommendation' });
       }
 
-      // Persist directly in client Firestore
-      if (userId && auth.currentUser) {
-        try {
-          const statRef = doc(db, 'users', userId, 'recommendation_stats', item.id);
-          const statSnap = await getDoc(statRef);
-          const currentData = statSnap.exists() ? statSnap.data() : { shown: 0, accepted: 0, dismissed: 0, consecutive_dismissals: 0 };
-
-          if (action === 'added') {
-            await setDoc(statRef, {
-              accepted: increment(1),
-              consecutive_dismissals: 0
-            }, { merge: true });
-          } else {
-            const consecutive = (currentData.consecutive_dismissals || 0) + 1;
-            await setDoc(statRef, {
-              dismissed: increment(1),
-              consecutive_dismissals: consecutive
-            }, { merge: true });
-
-            if (consecutive >= 3) {
-              const itemRef = doc(db, 'users', userId, 'household_items', item.id);
-              await updateDoc(itemRef, { suppressed: true });
-            }
-          }
-
-          // Log action to edit_log
-          await addDoc(collection(db, 'users', userId, 'edit_log'), {
-            item_name: item.item_name,
-            action: action === 'added' ? 'added' : 'dismissed',
-            logged_at: serverTimestamp()
-          });
-        } catch (fErr) {
-          console.debug('[Home] Firestore direct action update error:', fErr);
-        }
-      }
-
-      // Call authoritative backend action endpoint
+      // Call authoritative backend action endpoint (handles stats, suppression, and edit_log idempotently)
       const actionId = `rec_act_${userId}_${item.id}_${action}_${Date.now()}`;
       fetch(`/api/users/${userId}/recommendations/${item.id}/action`, {
         method: 'POST',

@@ -66,6 +66,31 @@ export function normaliseString(str) {
     .trim();
 }
 
+/**
+ * Normalizes an item name handling common Hindi transliterations,
+ * pack sizes, brand prefixes, and special characters cleanly.
+ */
+export function normalizeItemName(str) {
+  if (!str) return '';
+  let cleaned = normaliseString(str);
+
+  const transliterations = {
+    'doodh': 'milk',
+    'dudh': 'milk',
+    'aloo': 'potato',
+    'alu': 'potato',
+    'dahi': 'curd',
+    'atta': 'flour',
+    'chawal': 'rice',
+    'cheeni': 'sugar',
+    'pyaaz': 'onion'
+  };
+
+  const words = cleaned.split(' ');
+  const normalizedWords = words.map(w => transliterations[w] || w);
+  return normalizedWords.join(' ').trim();
+}
+
 export function tokeniseString(str) {
   const norm = normaliseString(str);
   return norm.split(/\s+/).filter(Boolean);
@@ -374,6 +399,75 @@ export function findBestMatchingProduct(products, requestedName, requestedQuanti
   });
 
   return { ...pool[0], quantityMatched: false };
+}
+
+/**
+ * Filter candidate products by availability and exclusion rules (category conflicts,
+ * contrasting modifiers like toned vs full cream, brown vs white bread).
+ */
+export function filterCandidatesByExclusions(candidates = [], requestedName = '', platform = 'blinkit') {
+  if (!Array.isArray(candidates)) return [];
+  const reqLower = requestedName.toLowerCase().trim();
+  const reqBrand = detectBrand(requestedName);
+
+  return candidates.filter(prod => {
+    // 1. Availability check: out-of-stock items must be rejected
+    if (!isProductAvailable(prod, platform)) return false;
+
+    const name = (platform === 'blinkit'
+      ? (prod.product_name || prod.name)
+      : platform === 'zepto'
+        ? (prod.name || prod.product_name)
+        : (prod.name || prod.product_name || prod.title) || '').toLowerCase();
+
+    // 2. Strict brand constraint if brand is requested
+    if (reqBrand) {
+      const candBrand = (prod.brand || '').toLowerCase();
+      if (!name.includes(reqBrand) && !candBrand.includes(reqBrand)) {
+        return false;
+      }
+    }
+
+    // 3. Contrast modifier hard constraints
+    // Milk types
+    if (reqLower.includes('toned') && !reqLower.includes('double toned')) {
+      if (name.includes('full cream') || name.includes('gold') || name.includes('buffalo')) return false;
+    }
+    if (reqLower.includes('full cream') || reqLower.includes('whole milk')) {
+      if (name.includes('toned') || name.includes('skimmed') || name.includes('cow milk')) return false;
+    }
+
+    // Bread types
+    if (reqLower.includes('brown bread') || (reqLower.includes('brown') && reqLower.includes('bread'))) {
+      if (name.includes('white bread') || name.includes('white sandwich')) return false;
+    }
+    if (reqLower.includes('white bread') || (reqLower.includes('white') && reqLower.includes('bread'))) {
+      if (name.includes('brown bread') || name.includes('multigrain') || name.includes('atta bread')) return false;
+    }
+
+    // Category exclusions from CATEGORY_RULES
+    for (const rule of CATEGORY_RULES) {
+      const hasTrigger = rule.trigger.some(t => reqLower.includes(t));
+      if (hasTrigger) {
+        const hasExclusion = rule.exclusions.some(e => name.includes(e));
+        if (hasExclusion && !rule.exclusions.some(e => reqLower.includes(e))) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Score, rank, and select best match from candidate pool.
+ * Penalizes pack size mismatches, respects availability, and returns null when no candidate meets threshold.
+ */
+export function scoreAndSelectBestMatch(candidates, requestedName, requestedQuantity, platform = 'blinkit') {
+  const filtered = filterCandidatesByExclusions(candidates, requestedName, platform);
+  if (!filtered || filtered.length === 0) return null;
+  return findBestMatchingProduct(filtered, requestedName, requestedQuantity, platform);
 }
 
 export function formatMatchedProduct(bestMatch, requestedItem, platform) {

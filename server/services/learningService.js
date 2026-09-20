@@ -180,6 +180,14 @@ export async function handleRecommendationShown(userId, itemId, db = admin.fires
   }
 }
 
+export function computeCycleWeek(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const firstDayOfYear = new Date(d.getFullYear(), 0, 1);
+  const pastDaysOfYear = (d.getTime() - firstDayOfYear.getTime()) / 86400000;
+  const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${weekNum}`;
+}
+
 /**
  * Idempotent Recommendation Action Handler (Added or Dismissed)
  */
@@ -207,7 +215,7 @@ export async function handleRecommendationAction(userId, itemId, action, actionI
 
     const statRef = db.collection('users').doc(userId).collection('recommendation_stats').doc(itemId);
     
-    return await db.runTransaction(async (t) => {
+    await db.runTransaction(async (t) => {
       const docSnap = await t.get(statRef);
       const currentData = docSnap.exists ? docSnap.data() : { shown: 0, accepted: 0, dismissed: 0, consecutive_dismissals: 0 };
       
@@ -230,6 +238,30 @@ export async function handleRecommendationAction(userId, itemId, action, actionI
       }
       return { success: true };
     });
+
+    // Authoritative write to edit_log for processUserLearning consumption
+    try {
+      let itemName = itemId;
+      const itemSnap = await db.collection('users').doc(userId).collection('household_items').doc(itemId).get();
+      if (itemSnap && itemSnap.exists && itemSnap.data && itemSnap.data().item_name) {
+        itemName = itemSnap.data().item_name;
+      }
+
+      const logAction = (action === 'dismissed' || action === 'removed') ? 'removed' : 'added';
+      const editLogCol = db.collection('users').doc(userId).collection('edit_log');
+      if (editLogCol && typeof editLogCol.add === 'function') {
+        await editLogCol.add({
+          item_name: itemName,
+          action: logAction,
+          cycle_week: computeCycleWeek(),
+          logged_at: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    } catch (logErr) {
+      console.warn(`[LearningService] edit_log write note for user ${userId}:`, logErr.message || logErr);
+    }
+
+    return { success: true };
   } catch (err) {
     if (!err.message?.includes('PERMISSION_DENIED')) {
       console.warn(`[LearningService] Action handling note for user ${userId}:`, err.message || err);
@@ -394,7 +426,7 @@ export async function processUserLearning(userId) {
       if (!itemActions[name]) itemActions[name] = { added_count: 0, removed_count: 0, originalName: log.item_name.trim() };
       
       if (log.action === 'added') itemActions[name].added_count++;
-      else if (log.action === 'removed') itemActions[name].removed_count++;
+      else if (log.action === 'removed' || log.action === 'dismissed') itemActions[name].removed_count++;
     });
 
     const itemsSnap = await db.collection('users').doc(userId).collection('household_items').get();

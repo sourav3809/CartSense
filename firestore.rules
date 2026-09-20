@@ -23,7 +23,8 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.name is string && data.name.size() > 0 &&
              data.email is string &&
-             data.password is string;
+             data.password is string &&
+             (!('timezone' in data) || data.timezone is string);
     }
 
     function isValidItem(data) {

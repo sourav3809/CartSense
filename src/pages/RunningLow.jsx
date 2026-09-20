@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { collection, getDocs, doc, deleteDoc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import NavBar from '../components/NavBar';
 import { calculateRunningLowItems } from '../lib/runningLowLogic';
 
@@ -87,20 +87,7 @@ export default function RunningLow() {
         });
         
         if (itemToDelete) {
-          const today = new Date();
-          const firstDayOfYear = new Date(today.getFullYear(), 0, 1);
-          const pastDaysOfYear = (today - firstDayOfYear) / 86400000;
-          const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-          const cycle_week = `${today.getFullYear()}-W${weekNum}`;
-
-          await addDoc(collection(db, 'users', userId, 'edit_log'), {
-            item_name: itemToDelete.item_name,
-            action: 'dismissed',
-            cycle_week,
-            logged_at: serverTimestamp()
-          });
-
-          // Call authoritative backend action endpoint to record dismissal & handle suppression
+          // Call authoritative backend action endpoint to record dismissal, handle suppression, and log to edit_log
           const actionId = `rec_act_${userId}_${deleteConfirmId}_dismissed_${Date.now()}`;
           fetch(`/api/users/${userId}/recommendations/${deleteConfirmId}/action`, {
             method: 'POST',

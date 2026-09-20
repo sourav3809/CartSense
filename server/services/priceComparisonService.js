@@ -126,6 +126,27 @@ export async function fetchSingleItemFromProvider(platform, itemName, location =
   }
 }
 
+export function normalizeRequestedItem(it) {
+  if (typeof it === 'string') {
+    const trimmed = it.trim();
+    return trimmed ? { item_name: trimmed, quantity: '' } : null;
+  } else if (it && typeof it === 'object') {
+    const rawName = it.item_name || it.name || '';
+    const trimmed = typeof rawName === 'string' ? rawName.trim() : '';
+    if (!trimmed) return null;
+    return {
+      item_name: trimmed,
+      quantity: typeof it.quantity === 'string' ? it.quantity.trim() : (it.quantity || '')
+    };
+  }
+  return null;
+}
+
+export function normalizeRequestedItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items.map(normalizeRequestedItem).filter(Boolean);
+}
+
 /**
  * Authoritative Multi-Platform Price Comparison (Blinkit, Zepto, Instamart)
  */
@@ -135,17 +156,7 @@ export async function comparePricesAcrossPlatforms({
   forceRefresh = false,
   db = admin.firestore()
 }) {
-  const parsedItems = (items || []).map(it => {
-    if (typeof it === 'string') {
-      return { item_name: it, quantity: '' };
-    } else if (it && typeof it === 'object') {
-      return {
-        item_name: it.item_name || it.name || '',
-        quantity: it.quantity || ''
-      };
-    }
-    return null;
-  }).filter(it => it && it.item_name);
+  const parsedItems = normalizeRequestedItems(items);
 
   const location = resolveUserLocation(userProfile);
   const platforms = ['blinkit', 'zepto', 'instamart'];

@@ -37,13 +37,15 @@ export function getActiveVapidPublicKey() {
 export function startNudgeScheduler() {
   console.log('[Scheduler] Registering Cron Infrastructure...');
 
-  // 1. Daily 6 PM Nudge cron ('0 18 * * *')
-  cron.schedule('0 18 * * *', async () => {
-    console.log('[Scheduler] Running Daily 6:00 PM Nudge evaluation job...');
+  // 1. Hourly Nudge Cron ('0 * * * *')
+  // Runs hourly at the top of the hour (0 * * * *) so nudges fire at 8:00 PM in each user's local timezone.
+  // A single daily server-time cron cannot accommodate users in varying timezones.
+  cron.schedule('0 * * * *', async () => {
+    console.log('[Scheduler] Running hourly timezone-aware Nudge evaluation job...');
     try {
       await processAllUsersNudges();
     } catch (err) {
-      console.warn('[Scheduler] Daily 6 PM Nudge cron warning:', err.message || err);
+      console.warn('[Scheduler] Hourly Nudge cron warning:', err.message || err);
     }
   });
 

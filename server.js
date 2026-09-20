@@ -1,3 +1,12 @@
+/**
+ * CHANGELOG & ARCHITECTURAL SUMMARY:
+ * 1. Timezone-Aware Nudge Scheduling: Captured user IANA timezone at onboarding/settings, transitioned scheduler to an hourly cron (0 * * * *) evaluating users at 8:00 PM in their local timezone with Asia/Kolkata fallback.
+ * 2. Consolidated Recommendation Write Paths: Eliminated duplicate client-side Firestore writes for recommendation exposures and actions, routing all changes through authoritative, idempotent backend endpoints.
+ * 3. Price-Matching Engine Test Coverage: Built comprehensive assertion test suite verifying packsize parsing, brand detection, exclusion rules, stock availability, and multi-platform scoring.
+ * 4. Price-Comparison API Request Validation: Implemented fail-fast input validation on /api/users/:id/prices for non-empty arrays, 30-item capacity caps, and valid item names before side effects.
+ * 5. Repository Hygiene: Removed legacy development test and probe scripts from the repository root.
+ */
+
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -19,7 +28,10 @@ import {
   processOrderConfirmationLearning
 } from './server/services/learningService.js';
 import { calculateRunningLowItems } from './server/services/runningLowService.js';
-import { comparePricesAcrossPlatforms } from './server/services/priceComparisonService.js';
+import {
+  comparePricesAcrossPlatforms,
+  normalizeRequestedItem
+} from './server/services/priceComparisonService.js';
 import { trackPersistentEvent, computeUserAnalyticsSummary } from './server/services/analyticsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -268,6 +280,26 @@ async function startServer() {
     try {
       const { items, forceRefresh, location } = req.body;
       const userId = req.params.id;
+
+      // 1. Array presence and non-empty validation
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items must be a non-empty array' });
+      }
+
+      // 2. Maximum items limit validation
+      // Hardcoded cap of 30 items to enforce the PRD performance envelope (under 10s for 10 items across 3 platforms)
+      // and prevent pathological requests from spawning excessive parallel provider calls.
+      if (items.length > 30) {
+        return res.status(400).json({ error: 'items array exceeds maximum of 30' });
+      }
+
+      // 3. Item normalization and validation: each entry must produce a non-empty trimmed item_name
+      for (const item of items) {
+        const normalized = normalizeRequestedItem(item);
+        if (!normalized || !normalized.item_name) {
+          return res.status(400).json({ error: 'each item must have a non-empty item_name' });
+        }
+      }
 
       // Fetch user profile to get location preferences if available
       let userProfile = location || {};

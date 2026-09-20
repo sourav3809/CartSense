@@ -325,14 +325,50 @@ export async function processSingleUserNudge(userId, isCron = false, now = new D
   }
 }
 
+/**
+ * Filter users whose current local time is 8:00 PM (hour 20) in their configured timezone (default: Asia/Kolkata)
+ */
+export function getUsersDueForNudgeEvaluation(allUsersSnap, now = new Date()) {
+  const docs = Array.isArray(allUsersSnap)
+    ? allUsersSnap
+    : (allUsersSnap && Array.isArray(allUsersSnap.docs) ? allUsersSnap.docs : []);
+
+  return docs.filter(userDoc => {
+    const data = typeof userDoc.data === 'function' ? userDoc.data() : (userDoc.data || userDoc);
+    const tz = (data && data.timezone) ? data.timezone : 'Asia/Kolkata';
+    try {
+      const hourStr = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hour: 'numeric',
+        hourCycle: 'h23'
+      }).format(now);
+      const localHour = parseInt(hourStr, 10);
+      return localHour === 20;
+    } catch (err) {
+      // Fallback to Asia/Kolkata on invalid timezone identifier
+      try {
+        const hourStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          hourCycle: 'h23'
+        }).format(now);
+        return parseInt(hourStr, 10) === 20;
+      } catch (e) {
+        return false;
+      }
+    }
+  });
+}
+
 export async function processAllUsersNudges(now = new Date()) {
-  console.log('[NudgeService] Starting daily nudge processing batch...');
+  console.log('[NudgeService] Starting hourly timezone-aware nudge processing batch...');
   try {
     const db = admin.firestore();
     const usersSnap = await db.collection('users').get();
+    const dueUsers = getUsersDueForNudgeEvaluation(usersSnap, now);
     
     let processedCount = 0;
-    for (const userDoc of usersSnap.docs) {
+    for (const userDoc of dueUsers) {
       const userId = userDoc.id;
       try {
         await processSingleUserNudge(userId, true, now);
@@ -341,8 +377,8 @@ export async function processAllUsersNudges(now = new Date()) {
         console.warn(`[NudgeService] Single user nudge warning for ${userId}:`, userErr.message || userErr);
       }
     }
-    console.log(`[NudgeService] Completed nudge batch processing. Processed ${processedCount} users.`);
-    return { success: true, processedCount };
+    console.log(`[NudgeService] Completed nudge batch processing. Evaluated ${dueUsers.length} users due at 8 PM local, processed ${processedCount}.`);
+    return { success: true, processedCount, dueCount: dueUsers.length };
   } catch (err) {
     console.warn('[NudgeService] Nudge batch processing warning:', err.message || err);
     return { success: false, error: err.message };

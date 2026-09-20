@@ -37,6 +37,9 @@ export default function Settings() {
   const [subscribingNotif, setSubscribingNotif] = useState(false);
   const [testPushSending, setTestPushSending] = useState(false);
   const [notifNotice, setNotifNotice] = useState(null);
+  const [userTimezone, setUserTimezone] = useState('Asia/Kolkata');
+  const [updatingTimezone, setUpdatingTimezone] = useState(false);
+  const [tzFeedback, setTzFeedback] = useState(null);
   const navigate = useNavigate();
   const userId = localStorage.getItem('userId');
   const userName = localStorage.getItem('userName');
@@ -131,13 +134,41 @@ export default function Settings() {
   const fetchItems = async () => {
     if (!userId) return;
     try {
-      const itemsSnap = await getDocs(collection(db, 'users', userId, 'household_items'));
+      const [itemsSnap, userSnap] = await Promise.all([
+        getDocs(collection(db, 'users', userId, 'household_items')),
+        getDoc(doc(db, 'users', userId))
+      ]);
       const itemsList = itemsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       setItems(itemsList);
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData.timezone) {
+          setUserTimezone(uData.timezone);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateCurrentTimezone = async () => {
+    if (!userId) return;
+    setUpdatingTimezone(true);
+    setTzFeedback(null);
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+      await updateDoc(doc(db, 'users', userId), { timezone: detected });
+      setUserTimezone(detected);
+      setTzFeedback('Timezone updated successfully');
+      setTimeout(() => setTzFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to update timezone:', err);
+      setTzFeedback('Failed to update timezone');
+      setTimeout(() => setTzFeedback(null), 3000);
+    } finally {
+      setUpdatingTimezone(false);
     }
   };
 
@@ -247,6 +278,33 @@ export default function Settings() {
             Logout
           </button>
         </div>
+
+        {/* Preferences / Timezone Section */}
+        <section className="space-y-3">
+          <h3 className="text-[11px] font-bold text-muted uppercase tracking-widest">Preferences</h3>
+          <div className="card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-ink">Timezone</p>
+                <p className="text-[12px] text-muted font-medium mt-0.5">{userTimezone}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleUpdateCurrentTimezone}
+                disabled={updatingTimezone}
+                className="px-3 py-1.5 rounded-[8px] border border-border text-ink bg-white font-medium text-xs hover:bg-gray-50 transition-all disabled:opacity-50"
+              >
+                {updatingTimezone ? 'Detecting...' : 'Update to Current'}
+              </button>
+            </div>
+            {tzFeedback && (
+              <p className="text-[11px] font-medium text-emerald-600">{tzFeedback}</p>
+            )}
+            <p className="text-[11px] text-muted leading-relaxed">
+              Smart nudges evaluate at 8:00 PM in your local timezone.
+            </p>
+          </div>
+        </section>
 
         {/* Notifications & Recovery Section */}
         <section className="space-y-3">

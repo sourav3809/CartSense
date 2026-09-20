@@ -137,8 +137,10 @@ export default function Onboarding() {
 
       // 2. Update user profile in Firestore
       const userDocRef = doc(db, 'users', userId);
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
       await updateDoc(userDocRef, {
         nudge_threshold: nudgeThreshold,
+        timezone: userTimezone,
         onboarding_complete: true
       });
 
