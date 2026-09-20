@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#7F77DD"/>
+  <!-- Minimalist, elegant shopping basket design -->
+  <path d="M130 180h252l-26 160H156L130 180z" fill="none" stroke="#ffffff" stroke-width="22" stroke-linejoin="round"/>
+  <path d="M190 180v-40c0-26 21-48 48-48s48 22 48 48v40" fill="none" stroke="#ffffff" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="210" cy="260" r="12" fill="#ffffff"/>
+  <circle cx="302" cy="260" r="12" fill="#ffffff"/>
+</svg>

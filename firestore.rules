@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "souravkar3809@gmail.com" ||
+         request.auth.token.role == "admin");
+    }
+
+    // Basic type validation helpers
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.email is string &&
+             data.password is string;
+    }
+
+    function isValidItem(data) {
+      return data.item_name is string && data.item_name.size() > 0 &&
+             data.consumption_days is number && data.consumption_days > 0;
+    }
+
+    function isValidCapture(data) {
+      return data.item_name is string && data.item_name.size() > 0;
+    }
+
+    function isValidLog(data) {
+      return data.item_name is string &&
+             data.action in ['added', 'removed', 'dismissed'] &&
+             data.logged_at is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
+
+      match /household_items/{itemId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if (isOwner(userId) && isValidItem(request.resource.data)) || isAdmin();
+        allow update: if (isOwner(userId) && isValidItem(request.resource.data)) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /daily_captures/{captureId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if (isOwner(userId) && isValidCapture(request.resource.data)) || isAdmin();
+        allow update: if (isOwner(userId) && isValidCapture(request.resource.data)) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /edit_log/{logId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if (isOwner(userId) && isValidLog(request.resource.data)) || isAdmin();
+        allow update: if (isOwner(userId) && isValidLog(request.resource.data)) || isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /recommendation_stats/{itemId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /recommendation_exposures/{exposureId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /recommendation_actions/{actionId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /nudge_reservations/{reservationId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /analytics_events/{eventId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /cadence/{docId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /learning_summary/{docId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /order_history/{orderId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /nudge_log/{logId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /price_cache/{cacheId} {
+      allow read: if isAuthenticated() || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

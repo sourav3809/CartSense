@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the CartSense application.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "city": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "password": { "type": "string", "description": "Hashed password" },
+        "nudge_threshold": { "type": "number", "description": "Default 4" },
+        "push_subscription": { "type": "object", "description": "VAPID push object" },
+        "onboarding_complete": { "type": "boolean", "description": "Default false" },
+        "nudge_snoozed_until": { "type": "string", "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "password"]
+    },
+    "HouseholdItem": {
+      "title": "HouseholdItem",
+      "description": "An item in a user's household stock.",
+      "type": "object",
+      "properties": {
+        "item_name": { "type": "string" },
+        "brand_preference": { "type": "string" },
+        "quantity_per_order": { "type": "string" },
+        "consumption_days": { "type": "number" },
+        "is_critical": { "type": "boolean" },
+        "is_kirana": { "type": "boolean" },
+        "order_cycles": { "type": "number" },
+        "suppressed": { "type": "boolean" },
+        "last_ordered_at": { "type": "string", "format": "date-time" },
+        "dismissed_at": { "type": "string", "format": "date-time" },
+        "confidence_level": { "type": "string", "enum": ["low", "medium", "high"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["item_name", "consumption_days"]
+    },
+    "DailyCapture": {
+      "title": "DailyCapture",
+      "description": "A capture of an item that is running low.",
+      "type": "object",
+      "properties": {
+        "item_name": { "type": "string" },
+        "quantity": { "type": "string" },
+        "source": { "type": "string" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "added_to_order": { "type": "boolean" }
+      },
+      "required": ["item_name", "captured_at"]
+    },
+    "EditLog": {
+      "title": "EditLog",
+      "description": "A log of user actions on items.",
+      "type": "object",
+      "properties": {
+        "item_name": { "type": "string" },
+        "action": { "type": "string", "enum": ["added", "removed", "dismissed"] },
+        "cycle_week": { "type": "string", "description": "e.g. 2026-W13" },
+        "logged_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["item_name", "action", "logged_at"]
+    },
+    "OrderHistory": {
+      "title": "OrderHistory",
+      "description": "A record of an executed grocery order.",
+      "type": "object",
+      "properties": {
+        "items": { "type": "array", "description": "List of ordered items" },
+        "platform": { "type": "string" },
+        "estimated_value": { "type": "number" },
+        "idempotency_key": { "type": "string" },
+        "ordered_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["items", "ordered_at"]
+    },
+    "NudgeLog": {
+      "title": "NudgeLog",
+      "description": "Log of proactive smart stock nudges.",
+      "type": "object",
+      "properties": {
+        "sent_at": { "type": "string", "format": "date-time" },
+        "opened_at": { "type": "string", "format": "date-time" },
+        "condition_triggered": { "type": "string" },
+        "items_count": { "type": "number" }
+      },
+      "required": ["sent_at"]
+    },
+    "PriceCache": {
+      "title": "PriceCache",
+      "description": "Persistent cache of scraped platform prices.",
+      "type": "object",
+      "properties": {
+        "platform": { "type": "string" },
+        "item_name": { "type": "string" },
+        "price": { "type": "number" },
+        "product_name": { "type": "string" },
+        "product_image": { "type": "string" },
+        "fetched_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["platform", "item_name", "price"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/users/{userId}/household_items/{itemId}": {
+      "schema": "HouseholdItem",
+      "description": "Items tracked by the user"
+    },
+    "/users/{userId}/daily_captures/{captureId}": {
+      "schema": "DailyCapture",
+      "description": "Daily captures of low stock items"
+    },
+    "/users/{userId}/edit_log/{logId}": {
+      "schema": "EditLog",
+      "description": "Logs of user edits"
+    },
+    "/users/{userId}/order_history/{orderId}": {
+      "schema": "OrderHistory",
+      "description": "Past confirmed orders"
+    },
+    "/users/{userId}/nudge_log/{logId}": {
+      "schema": "NudgeLog",
+      "description": "Historical log of smart nudges"
+    },
+    "/price_cache/{cacheId}": {
+      "schema": "PriceCache",
+      "description": "Cached prices for grocery items across platforms"
+    }
+  }
+}

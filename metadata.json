@@ -1,0 +1,6 @@
+{
+  "name": "CartSense",
+  "description": "Household stock awareness PWA that predicts when you're running low on essentials.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["PWA", "Firestore", "Express", "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
